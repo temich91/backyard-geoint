@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backyard-geoint"
+version = "0.1.0"
+description = "Visual Place Recognition within a single city"
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
+    "faiss-cpu>=1.8.0",
+    "numpy>=1.24.0,<2.0.0",
+    "opencv-python-headless>=4.9.0",
+    "Pillow>=10.0.0",
+    "tqdm>=4.66.0",
+    "pyyaml>=6.0.1",
+]
