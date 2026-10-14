@@ -59,7 +59,9 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from check_area import TILE_URL, Z, decode, load_dotenv, lonlat_to_tile, tile_px_to_lonlat  # noqa: E402
+from utils.paths import DATA
 
 try:
     from tqdm import tqdm
@@ -505,7 +507,7 @@ def make_session(workers):
 
 def image_path(out, image_id):
     image_id = str(image_id)
-    return out / "images" / image_id[-2:] / f"{image_id}.jpg"
+    return out / f"{image_id}.jpg"
 
 
 def get_thumb_url(api, image_id, token):
@@ -601,7 +603,7 @@ def parse_args():
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("--bbox", type=float, nargs=4, required=True,
                     metavar=("MIN_LON", "MIN_LAT", "MAX_LON", "MAX_LAT"))
-    ap.add_argument("--out", type=Path, default=Path("data") / "geo")
+    ap.add_argument("--out", type=Path, default=DATA / "raw")
     ap.add_argument("--token", default=os.environ.get("MAPILLARY_TOKEN"))
 
     g = ap.add_argument_group("отбор снимков (влияет на то, что скачивается)")
