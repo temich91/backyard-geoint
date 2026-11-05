@@ -8,8 +8,10 @@ train.py — скрипт обучения MixVPR на базе датасета
   - Multi-Similarity Loss (канонический лосс для MixVPR и GSV-Cities)
   - Раздельный learning rate для бэкбона (layer3) и агрегатора MixVPR
 
+Основной протокол — Б (пространственный), тестовый район не используется для обучения.
 Запуск:
-  python src/training/train.py --root data/district --epochs 10 --batch-places 16
+  python src/training/train.py --root data/city_train --views views_spatial --epochs 10 --batch-places 16
+Дополнительный протокол А нужно выбирать явно: --root data/district --views views.
 """
 
 import argparse
@@ -111,8 +113,10 @@ def train_epoch(model, loader, criterion, optimizer, device):
 # ============================================================================ Главный запуск
 def main():
     parser = argparse.ArgumentParser(description="Обучение модели MixVPR")
-    parser.add_argument("--root", type=Path, default=Path("data") / "district", help="Путь к датасету")
-    parser.add_argument("--views", default="views", help="Папка с views (views или views_spatial)")
+    parser.add_argument("--root", type=Path, default=Path("data") / "city_train",
+                        help="Путь к обучающему датасету (по умолчанию data/city_train, протокол Б)")
+    parser.add_argument("--views", default="views_spatial",
+                        help="Папка CSV: views_spatial (Б, основной) или views (А, дополнительный)")
     parser.add_argument("--epochs", type=int, default=10, help="Количество эпох")
     parser.add_argument("--batch-places", type=int, default=16, help="Количество мест в батче (P)")
     parser.add_argument("--img-per-place", type=int, default=4, help="Фото на каждое место (K)")

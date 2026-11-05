@@ -128,7 +128,7 @@ class Img(NamedTuple):
 
 
 def iter_tiles(bbox, token, cache_dir, workers):
-    """Скачивает векторные тайлы (с кэшем на диске) и отдаёт их по мере готовности."""
+    """Скачивает тайлы параллельно, но отдаёт в стабильном порядке (с кэшем на диске)."""
     min_lon, min_lat, max_lon, max_lat = bbox
     x0, y1 = lonlat_to_tile(min_lon, min_lat, Z)
     x1, y0 = lonlat_to_tile(max_lon, max_lat, Z)
@@ -158,7 +158,9 @@ def iter_tiles(bbox, token, cache_dir, workers):
     failed = 0
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = [ex.submit(get, t) for t in tiles]
-        for fut in tqdm(as_completed(futures), total=len(futures), desc="Тайлы", unit="тайл"):
+        # Порядок завершения зависит от сети и кэша. Фиксируем порядок обработки,
+        # иначе резервуарная выборка в scan() меняет набор фото при каждом запуске.
+        for fut in tqdm(futures, total=len(futures), desc="Тайлы", unit="тайл"):
             try:
                 yield fut.result()
             except PermissionError as e:
@@ -506,8 +508,13 @@ def make_session(workers):
 
 
 def image_path(out, image_id):
+    """Путь к фото: переиспользуем старую структуру, новые фото кладём прямо в out."""
     image_id = str(image_id)
-    return out / f"{image_id}.jpg"
+    path = out / f"{image_id}.jpg"
+    legacy = out / "images" / image_id[-2:] / f"{image_id}.jpg"
+    if not path.is_file() and legacy.is_file():
+        return legacy
+    return path
 
 
 def get_thumb_url(api, image_id, token):
@@ -544,24 +551,43 @@ def download_one(img, path, api, cdn, args):
 
 
 def download_all(plan, out, args):
+    cached, todo = [], []
+    for role, img in plan:
+        path = image_path(out, img["id"])
+        (cached if path.is_file() else todo).append((role, img, path))
+    print(f"Кэш в {out.resolve()}: найдено {len(cached)} фото; осталось скачать: {len(todo)}.")
+
+    def metadata_row(role, img, path):
+        ts = img.get("captured_at")
+        return {
+            "path": path.relative_to(out).as_posix(),
+            "image_id": img["id"], "role": role,
+            "lat": f"{img['lat']:.7f}", "lon": f"{img['lon']:.7f}",
+            "compass_angle": f"{img['compass_angle']:.2f}",
+            "captured_at": datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat() if ts else "",
+            "sequence_id": img["sequence_id"], "creator_id": img.get("creator_id", ""),
+            "quality_score": img.get("quality_score", ""), "n_positives": img.get("n_positives", ""),
+        }
+
+    # Метаданные восстанавливаются и для фото, скачанных до прерывания запуска.
+    rows = [metadata_row(role, img, path) for role, img, path in cached]
+    failed = []
     api = make_session(args.workers)
     cdn = make_session(args.workers)
 
     # Пробный запрос: если API отвечает ошибкой, останавливаемся сразу, а не через 20 минут
-    todo = [img for _, img in plan if not image_path(out, img["id"]).exists()]
     if todo:
         try:
-            get_thumb_url(api, todo[0]["id"], args.token)
+            get_thumb_url(api, todo[0][1]["id"], args.token)
         except Exception as e:
             sys.exit(f"Пробный запрос к API не прошёл, загрузка не начата.\nОтвет сервера: {e}")
 
-    rows, failed = [], []
     fail_streak = 0
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futures = {ex.submit(download_one, img, image_path(out, img["id"]), api, cdn, args): (role, img)
-                   for role, img in plan}
+        futures = {ex.submit(download_one, img, path, api, cdn, args): (role, img, path)
+                   for role, img, path in todo}
         for fut in tqdm(as_completed(futures), total=len(futures), desc="Загрузка", unit="фото"):
-            role, img = futures[fut]
+            role, img, path = futures[fut]
             try:
                 fut.result()
                 fail_streak = 0
@@ -574,24 +600,15 @@ def download_all(plan, out, args):
                     print(f"\n[!] 200 ошибок подряд, загрузка остановлена. Последняя: {e}")
                     break
                 continue
-            ts = img.get("captured_at")
-            rows.append({
-                "path": image_path(out, img["id"]).relative_to(out).as_posix(),
-                "image_id": img["id"], "role": role,
-                "lat": f"{img['lat']:.7f}", "lon": f"{img['lon']:.7f}",
-                "compass_angle": f"{img['compass_angle']:.2f}",
-                "captured_at": datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat() if ts else "",
-                "sequence_id": img["sequence_id"], "creator_id": img.get("creator_id", ""),
-                "quality_score": img.get("quality_score", ""), "n_positives": img.get("n_positives", ""),
-            })
+            rows.append(metadata_row(role, img, path))
     rows.sort(key=lambda r: (r["role"], str(r["image_id"])))
     write_csv(out / "metadata.csv", rows, list(rows[0]) if rows else ["path"])
     if failed:
         (out / "failed.txt").write_text("\n".join(failed), encoding="utf-8")
     else:
         (out / "failed.txt").unlink(missing_ok=True)  # не оставлять список ошибок от прошлого запуска
-    print(f"\nСкачано: {len(rows)} фото" + (f", ошибок: {len(failed)} (повторный запуск докачает)"
-                                           if failed else ""))
+    print(f"\nГотово: {len(rows)} фото (из кэша: {len(cached)}, новых: {len(rows) - len(cached)})"
+          + (f", ошибок: {len(failed)} (повторный запуск докачает)" if failed else ""))
 
 
 # ============================================================================ main

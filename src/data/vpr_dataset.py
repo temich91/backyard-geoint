@@ -15,7 +15,7 @@ vpr_dataset.py — классы Dataset для PyTorch поверх датасе
 
 Пример:
     from vpr_dataset import PlacesDataset, ImageDataset, make_transform, places_loader
-    train = PlacesDataset("data/district", "views/train.csv", img_per_place=4,
+    train = PlacesDataset("data/city_train", "views_spatial/train.csv", img_per_place=4,
                           transform=make_transform(train=True))
     loader = places_loader(train, places_per_batch=32, num_workers=4)
     for images, labels in loader:     # images: (32*4, 3, H, W), labels: (32*4,)
@@ -25,8 +25,8 @@ vpr_dataset.py — классы Dataset для PyTorch поверх датасе
 `if __name__ == "__main__":`.
 
 Проверка и просмотр того, что получает сеть:
-    python vpr_dataset.py --root data\\district --views views
-    (сохранит preview_train.jpg с одним батчем)
+    python vpr_dataset.py --root data\\city_train --views views_spatial
+    (сохранит preview_views_spatial_train.jpg с одним батчем)
 
 Установка: pip install torch torchvision pillow
 """
@@ -191,8 +191,9 @@ def image_loader(dataset, batch_size=64, num_workers=4):
 
 def main():
     ap = argparse.ArgumentParser(description="Проверка датасетов и превью батча")
-    ap.add_argument("--root", type=Path, default=Path("data") / "district")
-    ap.add_argument("--views", default="views", help="views (по поездкам) или views_spatial")
+    ap.add_argument("--root", type=Path, default=Path("data") / "city_train")
+    ap.add_argument("--views", default="views_spatial",
+                    help="views_spatial (Б, основной) или views (А, дополнительный)")
     ap.add_argument("--img-per-place", type=int, default=4)
     ap.add_argument("--places", type=int, default=8, help="Мест в батче для превью")
     ap.add_argument("--workers", type=int, default=0)
