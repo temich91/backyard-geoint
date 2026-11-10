@@ -5,3 +5,6 @@
 .env
 __pycache__/
 preview_*.jpg
+/artifacts/
+*.faiss
+*.egg-info/

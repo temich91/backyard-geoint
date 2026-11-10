@@ -346,8 +346,9 @@ python .\src\data\vpr_dataset.py --root data\city_train --views views_spatial
 
 - Обучить реализованную MixVPR на `city_train/views_spatial/train.csv`. Возможность
   старта с весов ImageNet стоит подтвердить у преподавателя.
-- Реализовать поиск FAISS и валидацию по `views_spatial/val_database.csv` и `val_queries.csv`;
-  выбирать чекпоинт по валидационному Recall.
+- Подключить реализованный [поиск FAISS](../search/README.md) к валидации по
+  `views_spatial/val_database.csv` и `val_queries.csv`; реализовать метрики и выбирать
+  чекпоинт по валидационному Recall.
 - После выбора модели провести финальную оценку по базе и запросам района `district/views/`:
   Recall@1/5/10 при 25 и 50 м, средняя и медианная ошибка в метрах.
 - Демо: фото → точка на карте.
