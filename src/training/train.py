@@ -111,7 +111,7 @@ def train_epoch(model, loader, criterion, optimizer, device):
 
 
 # ============================================================================ Главный запуск
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Обучение модели MixVPR")
     parser.add_argument("--root", type=Path, default=Path("data") / "city_train",
                         help="Путь к обучающему датасету (по умолчанию data/city_train, протокол Б)")
@@ -126,7 +126,7 @@ def main():
     parser.add_argument("--workers", type=int, default=2, help="Количество воркеров DataLoader")
     parser.add_argument("--out-dir", type=Path, default=Path("checkpoints"), help="Куда сохранять веса")
     parser.add_argument("--device", default=None, help="cuda или cpu (по умолчанию определяется автоматически)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     device = torch.device(args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"Используемое устройство: {device}")

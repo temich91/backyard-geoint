@@ -233,34 +233,43 @@ def main(argv=None):
     p_pipe.set_defaults(func=_cmd_pipeline)
 
     # 3. train
-    p_train = subparsers.add_parser("train", help="Обучить модель MixVPR")
-    p_train.set_defaults(func=lambda args: _forward_to_module("src.training.train", argv))
+    p_train = subparsers.add_parser("train", help="Обучить модель MixVPR", add_help=False)
+    p_train.set_defaults(func=lambda rem: _forward_to_module("src.training.train", rem))
 
     # 4. extract
-    p_extract = subparsers.add_parser("extract", help="Извлечь дескрипторы из изображений")
-    p_extract.set_defaults(func=lambda args: _forward_to_module("src.models.extract", argv))
+    p_extract = subparsers.add_parser("extract", help="Извлечь дескрипторы из изображений", add_help=False)
+    p_extract.set_defaults(func=lambda rem: _forward_to_module("src.models.extract", rem))
 
     # 5. build-index
-    p_index = subparsers.add_parser("build-index", help="Построить индекс FAISS")
-    p_index.set_defaults(func=lambda args: _forward_to_module("src.search.__main__", ["build"] + (argv[2:] if argv and len(argv) > 2 else [])))
+    p_index = subparsers.add_parser("build-index", help="Построить индекс FAISS", add_help=False)
+    p_index.set_defaults(func=lambda rem: _forward_to_module("src.search.__main__", ["build"] + rem))
 
     # 6. evaluate
-    p_eval = subparsers.add_parser("evaluate", help="Рассчитать Recall@k и ошибки локализации")
-    p_eval.set_defaults(func=lambda args: _forward_to_module("src.eval.evaluate", argv))
+    p_eval = subparsers.add_parser("evaluate", help="Рассчитать Recall@k и ошибки локализации", add_help=False)
+    p_eval.set_defaults(func=lambda rem: _forward_to_module("src.eval.evaluate", rem))
 
     parsed, remaining = parser.parse_known_args(argv)
     if parsed.subcommand in ("train", "extract", "build-index", "evaluate"):
-        parsed.func(parsed)
+        parsed.func(remaining)
     else:
         args = parser.parse_args(argv)
         args.func(args)
 
 
-def _forward_to_module(module_name: str, argv: list[str] | None):
+def _forward_to_module(module_name: str, sub_argv: list[str]):
     import importlib
+    import inspect
     mod = importlib.import_module(module_name)
-    sub_argv = argv[2:] if argv and len(argv) > 2 else sys.argv[2:]
-    mod.main(sub_argv)
+    sig = inspect.signature(mod.main)
+    if sig.parameters:
+        mod.main(sub_argv)
+    else:
+        old_argv = sys.argv
+        try:
+            sys.argv = [sys.argv[0]] + sub_argv
+            mod.main()
+        finally:
+            sys.argv = old_argv
 
 
 if __name__ == "__main__":

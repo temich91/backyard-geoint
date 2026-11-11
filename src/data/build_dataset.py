@@ -613,7 +613,7 @@ def download_all(plan, out, args):
 
 # ============================================================================ main
 
-def parse_args():
+def parse_args(argv=None):
     load_dotenv(Path(__file__).resolve().parent / ".env")
     load_dotenv(Path.cwd() / ".env")
     ap = argparse.ArgumentParser(description="Единый датасет для геолокации по фото (Mapillary)",
@@ -659,7 +659,7 @@ def parse_args():
     ap.add_argument("--dry-run", action="store_true", help="Только оценить объём")
     ap.add_argument("--views-only", action="store_true", help="Пересобрать CSV без скачивания")
     ap.add_argument("--refresh", action="store_true", help="Заново скачать тайлы (сбросить кэш)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     if not (args.bbox[0] < args.bbox[2] and args.bbox[1] < args.bbox[3]):
         ap.error("bbox: ожидается MIN_LON MIN_LAT MAX_LON MAX_LAT")
     if not args.views_only and not args.token:
@@ -675,8 +675,8 @@ def parse_args():
     return args
 
 
-def main():
-    args = parse_args()
+def main(argv=None):
+    args = parse_args(argv)
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
     grid = Grid(args.bbox)
