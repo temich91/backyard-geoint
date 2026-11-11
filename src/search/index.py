@@ -242,7 +242,12 @@ class PlaceIndex:
         а не от намеренно подменённых файлов FAISS.
         """
         directory = Path(directory)
-        manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        manifest_path = directory / "manifest.json"
+        if not directory.exists():
+            raise FileNotFoundError(f"Каталог индекса не найден: '{directory}'. Сначала постройте индекс командой 'build-index'.")
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"Файл манифеста не найден: '{manifest_path}'. Каталог индекса поврежден или пуст.")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if (
             not isinstance(manifest, dict)
             or type(manifest.get("format_version")) is not int

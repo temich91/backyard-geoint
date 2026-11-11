@@ -90,16 +90,20 @@ def locate_image(
 
 def _cmd_locate(args):
     gt = (args.gt_lat, args.gt_lon) if (args.gt_lat is not None and args.gt_lon is not None) else None
-    result = locate_image(
-        image_path=args.image,
-        index_path=args.index,
-        checkpoint_path=args.checkpoint,
-        top_k=args.top_k,
-        device=args.device,
-        gt_coords=gt,
-        descriptor_id=args.descriptor_id,
-        pretrained=not args.no_pretrained,
-    )
+    try:
+        result = locate_image(
+            image_path=args.image,
+            index_path=args.index,
+            checkpoint_path=args.checkpoint,
+            top_k=args.top_k,
+            device=args.device,
+            gt_coords=gt,
+            descriptor_id=args.descriptor_id,
+            pretrained=not args.no_pretrained,
+        )
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        sys.stderr.write(f"Ошибка при поиске: {e}\n")
+        sys.exit(1)
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -274,3 +278,5 @@ def _forward_to_module(module_name: str, sub_argv: list[str]):
 
 if __name__ == "__main__":
     main()
+
+# python src/main.py locate --image path/to/photo.jpg --index artifacts/index/district --checkpoint checkpoints/mixvpr_best.pt --top-k 5
