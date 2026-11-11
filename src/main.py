@@ -63,11 +63,18 @@ def locate_image(
     matches = results[0] if results else []
     best_candidate = matches[0] if matches else None
 
+    match_dicts = []
+    for m in matches:
+        d = m.to_dict()
+        meta = m.metadata
+        d["osm_link"] = osm_url(meta["lat"], meta["lon"])
+        match_dicts.append(d)
+
     output: dict[str, Any] = {
         "image": str(image_path),
         "index": str(index_path),
         "top_k": top_k,
-        "matches": [m.to_dict() for m in matches],
+        "matches": match_dicts,
     }
 
     if best_candidate:
@@ -119,8 +126,6 @@ def _cmd_locate(args):
     print("=" * 64)
     print(f"Предсказанные координаты : {pred['lat']:.6f}, {pred['lon']:.6f}")
     print(f"Косинусное сходство      : {pred['similarity']:.4f}")
-    print(f"ID ближайшего кадра в базе: {pred['image_id']}")
-    print(f"Ссылка на карту (OSM)    : {pred['osm_link']}")
     if "error_meters" in pred:
         print(f"Расстояние до истины (GT): {pred['error_meters']:.2f} м")
 
@@ -128,7 +133,8 @@ def _cmd_locate(args):
     print("Топ кандидатов:")
     for match in result["matches"]:
         meta = match["metadata"]
-        print(f"  #{match['rank']} | Сходство: {match['similarity']:.4f} | GPS: {meta['lat']:.6f}, {meta['lon']:.6f} | ID: {meta['image_id']}")
+        osm = match.get("osm_link", osm_url(meta["lat"], meta["lon"]))
+        print(f"  #{match['rank']} | Сходство: {match['similarity']:.4f} | GPS: {meta['lat']:.6f}, {meta['lon']:.6f} | ID: {meta['image_id']} | OSM: {osm}")
     print("=" * 64)
 
 
