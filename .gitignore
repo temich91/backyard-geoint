@@ -8,3 +8,7 @@ preview_*.jpg
 /artifacts/
 *.faiss
 *.egg-info/
+/checkpoints/
+*.pt
+*.pth
+.idea/

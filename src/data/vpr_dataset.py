@@ -96,8 +96,12 @@ def read_rows(root, csv_name):
         rows = list(csv.DictReader(f))
     for r in rows:
         r["file"] = root / r["path"]
-        for k in ("lat", "lon", "compass_angle"):
+        for k in ("lat", "lon"):
             r[k] = float(r[k])
+        if r.get("compass_angle") not in (None, ""):
+            r["compass_angle"] = float(r["compass_angle"])
+        else:
+            r["compass_angle"] = 0.0
         if r.get("class_idx", "") != "":
             r["class_idx"] = int(r["class_idx"])
     return rows

@@ -159,3 +159,76 @@ python3.12 -m venv .venv
 pip install --upgrade pip
 pip install -e ".[dev]"
 ```
+
+---
+
+## Сквозной запуск пайплайна от начала до конца
+
+Все этапы проекта объединены в единый CLI `python src/main.py` (или через скрипты в папке `scripts/`).
+
+### 1. Наполнение базы данных (Сбор датасета Mapillary)
+
+Для загрузки данных требуется токен Mapillary в файле `.env` (`MAPILLARY_TOKEN=MLY|...`).
+Подробная инструкция: [src/data/README.md](src/data/README.md).
+
+Команды загрузки:
+```powershell
+# Тестовый полигон (~200×200 м, пара минут для проверки)
+python src/data/build_dataset.py --bbox 56.0654 54.7697 56.0684 54.7715 --out data/test
+
+# Загрузка целевого района (вариант А или отложенный тест):
+python src/data/build_dataset.py --bbox 56.046410 54.758362 56.087351 54.782870 --out data/district
+
+# Загрузка города для пространственного сплита (вариант Б):
+python src/data/build_dataset.py --bbox 55.9000 54.6000 56.2000 54.9000 --out data/city_train --spatial-split --spatial-exclude-district 56.046410 54.758362 56.087351 54.782870
+```
+
+### 2. Обучение модели (MixVPR)
+
+```powershell
+python src/main.py train --root data/district --views views --epochs 5 --batch-places 16
+# или напрямую через scripts/train.py
+```
+Чекпоинты автоматически сохраняются в `checkpoints/mixvpr_best.pt` и `checkpoints/mixvpr_last.pt`.
+
+### 3. Извлечение дескрипторов (эмбеддингов)
+
+```powershell
+# Извлечение векторов базы
+python src/main.py extract --checkpoint checkpoints/mixvpr_best.pt --root data/district --csv views/database.csv --out artifacts/embeddings/database.npy
+
+# Извлечение векторов запросов
+python src/main.py extract --checkpoint checkpoints/mixvpr_best.pt --root data/district --csv views/queries.csv --out artifacts/embeddings/queries.npy
+```
+
+### 4. Построение индекса FAISS
+
+```powershell
+python src/main.py build-index --embeddings artifacts/embeddings/database.npy --metadata data/district/views/database.csv --out artifacts/index/district
+```
+
+### 5. Оценка качества поиска (Recall@k и ошибка локализации)
+
+```powershell
+python src/main.py evaluate --index artifacts/index/district --queries-embeddings artifacts/embeddings/queries.npy --queries-metadata data/district/views/queries.csv --top-k 10 --output artifacts/results/metrics.json
+```
+
+Выводит подробную сводку:
+- `Recall@1`, `Recall@5`, `Recall@10` в радиусе 25 и 50 метров;
+- Среднюю, медианную, минимальную и максимальную географическую ошибку (в метрах) относительно GPS-истины.
+
+### 6. Определение локации по одной фотографии (Демо / Поиск)
+
+```powershell
+python src/main.py locate --image path/to/photo.jpg --index artifacts/index/district --checkpoint checkpoints/mixvpr_best.pt --top-k 5
+```
+
+Команда возвращает предсказанные координаты (`lat`, `lon`), кликабельную ссылку на OpenStreetMap, сходство и список ближайших совпадений.
+
+### 7. Сквозной запуск одним вызовом (`pipeline`)
+
+Выполняет последовательно извлечение признаков, построение индекса и оценку качества:
+```powershell
+python src/main.py pipeline --root data/district --views views --checkpoint checkpoints/mixvpr_best.pt --artifacts artifacts
+```
+

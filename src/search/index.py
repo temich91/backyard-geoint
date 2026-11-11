@@ -38,6 +38,9 @@ def _validate_metadata(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]
         if not isinstance(source, Mapping):
             raise ValueError(f"Метаданные строки {i}: ожидается словарь")
         row = copy.deepcopy(dict(source))
+        for k, v in list(row.items()):
+            if isinstance(v, Path):
+                row[k] = str(v)
         for key in ("image_id", "path", "lat", "lon"):
             if row.get(key) is None or str(row[key]).strip() == "":
                 raise ValueError(f"Метаданные строки {i}: отсутствует {key}")
