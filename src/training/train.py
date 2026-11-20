@@ -126,6 +126,7 @@ def main(argv=None):
     parser.add_argument("--workers", type=int, default=2, help="Количество воркеров DataLoader")
     parser.add_argument("--out-dir", type=Path, default=Path("checkpoints"), help="Куда сохранять веса")
     parser.add_argument("--device", default=None, help="cuda или cpu (по умолчанию определяется автоматически)")
+    parser.add_argument("--resume", type=Path, default=None, help="Путь к чекпоинту для продолжения обучения (например, checkpoints/mixvpr_last.pt)")
     args = parser.parse_args(argv)
 
     device = torch.device(args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -151,7 +152,7 @@ def main(argv=None):
     # 2. Модель: готовая ResNet-50 + агрегатор MixVPR
     model = ResNet50MixVPR(
         pretrained=True,
-        freeze_blocks=2,             # Заморожены conv1, layer1, layer2; layer3 обучается
+        freeze_blocks=2,
         descriptor_dim=args.descriptor_dim,
         mix_depth=4,
     ).to(device)
@@ -167,12 +168,30 @@ def main(argv=None):
 
     criterion = MultiSimilarityLoss(alpha=2.0, beta=50.0, base=0.5)
 
-    # 4. Цикл обучения
-    args.out_dir.mkdir(parents=True, exist_ok=True)
+    # --- ДОБАВЛЕНО: Возобновление обучения из чекпоинта ---
+    start_epoch = 1
     best_loss = float("inf")
 
+    if args.resume and args.resume.exists():
+        print(f"Загрузка чекпоинта из {args.resume}...")
+        checkpoint = torch.load(args.resume, map_location=device)
+
+        model.load_state_dict(checkpoint["model_state"])
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+
+        # Начинаем со следующей эпохи после сохраненной
+        start_epoch = checkpoint["epoch"] + 1
+        best_loss = checkpoint.get("loss", float("inf"))
+
+        print(f"Обучение возобновлено с эпохи {start_epoch}. Прошлый Loss: {best_loss:.4f}")
+    # ----------------------------------------------------
+
+    # 4. Цикл обучения
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
     print("\nНачало обучения:")
-    for epoch in range(1, args.epochs + 1):
+    # Исправлен диапазон: используем start_epoch вместо 1
+    for epoch in range(start_epoch, args.epochs + 1):
         avg_loss = train_epoch(model, train_loader, criterion, optimizer, device)
         print(f"Эпоха [{epoch:02d}/{args.epochs:02d}] — Средний Loss: {avg_loss:.4f}")
 
@@ -196,8 +215,6 @@ def main(argv=None):
             best_path = args.out_dir / "mixvpr_best.pt"
             torch.save(checkpoint_data, best_path)
             print(f"  * Сохранен лучший чекпоинт: {best_path}")
-
-    print(f"\nОбучение завершено. Итоговые веса сохранены в {args.out_dir}")
 
 
 if __name__ == "__main__":
