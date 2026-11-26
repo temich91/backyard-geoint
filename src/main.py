@@ -14,10 +14,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from functools import cache
 from pathlib import Path
 from typing import Any
-
-import numpy as np
 
 # Корень проекта в sys.path
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +25,8 @@ if str(ROOT) not in sys.path:
 
 from src.eval.metrics import haversine_distance
 from src.eval.evaluate import format_evaluation_report, run_evaluation
-from src.models.extract import extract_embeddings, extract_image, load_model
+from src.models.extract import extract_dataset_to_file, extract_image, extraction_source, load_model
+from src.models.resume import file_sha256
 from src.search.index import PlaceIndex
 
 
@@ -141,14 +141,14 @@ def _cmd_locate(args):
 def _cmd_pipeline(args):
     """Сквозной пайплайн: извлечение векторов -> индекс -> оценка качества."""
     import torch
+    if args.resume and args.checkpoint is None:
+        raise SystemExit("--resume требует --checkpoint: без него часть весов инициализируется случайно")
     dev = torch.device(args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu"))
 
     artifacts_dir = Path(args.artifacts)
     emb_dir = artifacts_dir / "embeddings"
     index_dir = artifacts_dir / "index"
     results_dir = artifacts_dir / "results"
-    emb_dir.mkdir(parents=True, exist_ok=True)
-    index_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
 
     root = Path(args.root)
@@ -159,33 +159,41 @@ def _cmd_pipeline(args):
     q_npy = emb_dir / "queries.npy"
     eval_json = results_dir / "evaluation.json"
 
-    print("\n[1/3] Загрузка модели и извлечение дескрипторов...")
-    model = load_model(
-        checkpoint_path=args.checkpoint,
-        descriptor_dim=args.descriptor_dim,
-        device=dev,
-        pretrained=not args.no_pretrained,
-    )
+    print(f"\n[1/3] Извлечение дескрипторов ({dev}) в {emb_dir}...", flush=True)
+    checkpoint_hash = file_sha256(args.checkpoint) if args.resume else None
+
+    @cache
+    def get_model():
+        return load_model(
+            checkpoint_path=args.checkpoint,
+            descriptor_dim=args.descriptor_dim,
+            device=dev,
+            pretrained=not args.no_pretrained,
+        )
 
     from src.data.vpr_dataset import ImageDataset
-    db_dataset = ImageDataset(root, db_csv)
-    print(f"  База: {len(db_dataset)} изображений")
-    db_emb = extract_embeddings(model, db_dataset, device=dev, batch_size=args.batch_size, num_workers=args.workers)
-    np.save(db_npy, db_emb, allow_pickle=False)
+    for label, csv_name, output in (("База", db_csv, db_npy), ("Запросы", q_csv, q_npy)):
+        dataset = ImageDataset(root, csv_name)
+        print(f"  {label}: {len(dataset)} изображений", flush=True)
+        source = None
+        if checkpoint_hash is not None:
+            source = extraction_source(root, csv_name, checkpoint_hash, args.descriptor_dim)
+        extract_dataset_to_file(
+            get_model, dataset, output, device=dev, batch_size=args.batch_size,
+            num_workers=args.workers, resume_source=source,
+        )
+        print(f"  Сохранено: {output}", flush=True)
+    get_model.cache_clear()
 
-    q_dataset = ImageDataset(root, q_csv)
-    print(f"  Запросы: {len(q_dataset)} изображений")
-    q_emb = extract_embeddings(model, q_dataset, device=dev, batch_size=args.batch_size, num_workers=args.workers)
-    np.save(q_npy, q_emb, allow_pickle=False)
-
-    print(f"\n[2/3] Построение FAISS-индекса в {index_dir}...")
+    print(f"\n[2/3] Построение FAISS-индекса в {index_dir}...", flush=True)
     import shutil
-    if index_dir.exists():
-        shutil.rmtree(index_dir, ignore_errors=True)
     index = PlaceIndex.from_files(db_npy, root / db_csv, descriptor_id=args.descriptor_id)
+    if index_dir.exists():
+        shutil.rmtree(index_dir)
     index.save(index_dir)
+    del index
 
-    print(f"\n[3/3] Оценка качества на тестовых запросах...")
+    print("\n[3/3] Оценка качества на тестовых запросах...", flush=True)
     radii = tuple(float(r.strip()) for r in args.radii.split(",") if r.strip())
     metrics = run_evaluation(
         index_path=index_dir,
@@ -240,6 +248,7 @@ def main(argv=None):
     p_pipe.add_argument("--descriptor-id", default=None, help="Метка дескриптора")
     p_pipe.add_argument("--device", default=None, help="cuda или cpu")
     p_pipe.add_argument("--no-pretrained", action="store_true", help="Не загружать предобученные веса ImageNet")
+    p_pipe.add_argument("--resume", action="store_true", help="Сохранять и продолжать прогресс извлечения (требует --checkpoint)")
     p_pipe.set_defaults(func=_cmd_pipeline)
 
     # 3. train
