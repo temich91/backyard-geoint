@@ -21,3 +21,10 @@ dependencies = [
     "requests>=2.31",
     "mapbox-vector-tile>=2.0",
 ]
+
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Backyard GeoInt — демо</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #bar { padding: 10px; display: flex; gap: 10px; align-items: center; }
+    #map { height: calc(100vh - 56px); }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <input type="file" id="file" accept="image/*">
+    <button id="go">Найти место</button>
+    <span id="status"></span>
+  </div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map("map").setView([54.77, 56.06], 13);
+    map.attributionControl.setPrefix(false);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      { attribution: "© OpenStreetMap" }).addTo(map);
+    let layer = L.layerGroup().addTo(map);
+
+    document.getElementById("go").onclick = async () => {
+      const f = document.getElementById("file").files[0];
+      const st = document.getElementById("status");
+      if (!f) { st.textContent = "Выберите фото"; return; }
+      st.textContent = "Ищем…";
+      const fd = new FormData(); fd.append("file", f);
+      const r = await fetch("/api/locate?k=5", { method: "POST", body: fd });
+      if (!r.ok) { st.textContent = (await r.json()).detail; return; }
+      const { matches } = await r.json();
+      layer.clearLayers();
+      const pts = matches.map(m => {
+        const icon = L.divIcon({
+          className: "", iconSize: [28, 28],
+          html: `<div style="background:${m.rank === 1 ? "#d9534f" : "#337ab7"};color:#fff;
+                 border-radius:50%;width:28px;height:28px;line-height:28px;text-align:center;
+                 font-weight:bold">${m.rank}</div>`
+        });
+        L.marker([m.lat, m.lon], { icon }).addTo(layer).bindPopup(
+          `<b>Вариант ${m.rank}</b><br>Сходство: ${m.similarity}<br>
+           <img src="${m.photo}" width="240">`);
+        return [m.lat, m.lon];
+      });
+      map.fitBounds(pts, { maxZoom: 17, padding: [40, 40] });
+      st.textContent = `Лучшее сходство: ${matches[0].similarity}`;
+    };
+  </script>
+</body>
+</html>

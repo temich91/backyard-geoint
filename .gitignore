@@ -12,3 +12,4 @@ preview_*.jpg
 *.pt
 *.pth
 .idea/
+check_pipeline.py
