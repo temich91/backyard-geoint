@@ -232,3 +232,45 @@ python src/main.py locate --image path/to/photo.jpg --index artifacts/index/dist
 python src/main.py pipeline --root data/district --views views --checkpoint checkpoints/mixvpr_best.pt --artifacts artifacts
 ```
 
+#### Возобновление извлечения в Google Colab
+
+Этап `[1/3]` — вычисление эмбеддингов, а не построение FAISS. Без `--resume` векторы
+записываются только после обработки всего CSV. Если CSV уже обработан и есть готовый
+`database.npy` и соответствующий ему `database.csv` (тот же порядок строк), можно сразу
+запустить команду `build-index` из шага 4, без GPU и повторного извлечения.
+
+Для длительного запуска смонтируйте Google Drive и выберите GPU в настройках среды Colab:
+
+```python
+from google.colab import drive
+
+drive.mount('/content/drive')
+```
+
+Из корня репозитория в другой ячейке Colab (замените пути на свои):
+
+```bash
+!python -u src/main.py pipeline --resume --device cuda --batch-size 8 --workers 0 \
+  --root data/district --views views \
+  --checkpoint '/content/drive/MyDrive/geoint/mixvpr_best.pt' \
+  --artifacts '/content/drive/MyDrive/geoint/run-1'
+```
+
+`--resume` используйте уже при первом запуске. Эмбеддинги пишутся на диск батчами;
+прогресс фиксируется каждые 16 батчей и в конце каждого CSV. После остановки
+повторите ту же команду: готовые `.npy` пропускаются, незаконченный CSV продолжается
+с последней сохранённой строки. FAISS и отчёт строятся заново. Флаг работает и для
+`extract`: укажите `--checkpoint` и путь на Drive в `--out` вместо `--artifacts`.
+
+После сброса среды снова смонтируйте Drive и, если датасет был в `/content`, восстановите
+его по тому же пути. Не удаляйте `.part` и `.resume.json`, пока нужен прогресс. Для изменённых
+весов или датасета используйте новый каталог артефактов. Не запускайте две записи в один
+каталог одновременно. Готовые `.npy`, созданные без `--resume`, не имеют файла состояния:
+постройте по ним индекс отдельно или укажите новый каталог для запуска с `--resume`.
+
+`^C` или `KeyboardInterrupt` означает прерывание, но не указывает его источник. Если
+в логе видно `CUDA out of memory`, уменьшите `--batch-size` до 4 или 2. Если среда
+перезапустилась, проверьте сообщения Colab о лимитах сессии и расходе RAM. Обычные
+файлы в `/content` теряются при замене среды; на Drive можно продолжить только с
+данных, которые успели записаться.
+

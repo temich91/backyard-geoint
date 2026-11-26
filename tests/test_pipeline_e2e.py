@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -191,6 +192,31 @@ class EndToEndPipelineTests(unittest.TestCase):
             self.assertEqual(eval_data["num_queries"], 1)
         finally:
             main_mod.load_model = orig_load_model
+
+    def test_pipeline_resume_reuses_completed_database(self):
+        checkpoint = self.tmpdir / "checkpoint.pt"
+        checkpoint.write_bytes(b"test checkpoint")
+        args = [
+            "pipeline", "--resume", "--root", str(self.root),
+            "--artifacts", str(self.tmpdir / "artifacts"),
+            "--checkpoint", str(checkpoint), "--device", "cpu",
+        ]
+        forward = self.model.forward
+
+        def interrupt_on_queries(images):
+            if len(images) == 1:
+                raise KeyboardInterrupt
+            return forward(images)
+
+        with patch("src.main.load_model", return_value=self.model):
+            with patch.object(self.model, "forward", side_effect=interrupt_on_queries):
+                with self.assertRaises(KeyboardInterrupt):
+                    main_cli(args)
+            with patch.object(self.model, "forward", wraps=forward) as resumed_forward:
+                main_cli(args)
+        resumed_forward.assert_called_once()
+        self.assertEqual(len(resumed_forward.call_args.args[0]), 1)
+        self.assertTrue((self.tmpdir / "artifacts/index/manifest.json").exists())
 
 
 if __name__ == "__main__":

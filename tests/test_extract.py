@@ -1,14 +1,17 @@
+import json
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import numpy as np
 import torch
 import torch.nn as nn
 from PIL import Image
+from torch.utils.data import TensorDataset
 
-from src.models.extract import extract_embeddings, extract_image, load_model
+from src.models.extract import extract_dataset_to_file, extract_embeddings, extract_image, load_model
 from src.data.vpr_dataset import ImageDataset
 
 
@@ -65,6 +68,43 @@ class ExtractTests(unittest.TestCase):
         norms = np.linalg.norm(embeddings, axis=1)
         for n in norms:
             self.assertAlmostEqual(n, 1.0, places=4)
+
+    def test_resume_after_interrupt(self):
+        vectors = torch.arange(14, dtype=torch.float32).reshape(7, 2)
+        dataset = TensorDataset(vectors)
+        model = nn.Identity()
+        out = self.tmpdir / "vectors.npy"
+        source = {"checkpoint": "same-weights", "csv": "same-rows"}
+
+        def interrupt(batch):
+            if batch[0, 0] == 6:
+                raise KeyboardInterrupt
+            return batch
+
+        def extract(batch_size, get_model=lambda: model, resume_source=source):
+            return extract_dataset_to_file(
+                get_model, dataset, out, device=torch.device("cpu"), batch_size=batch_size,
+                num_workers=0, resume_source=resume_source,
+            )
+
+        with patch("src.models.resume.SAVE_EVERY_BATCHES", 2), patch.object(model, "forward", side_effect=interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                extract(batch_size=1)
+        self.assertFalse(out.exists())
+        state = json.loads((self.tmpdir / "vectors.npy.resume.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["rows"], 2)
+        with self.assertRaisesRegex(ValueError, "Входные данные изменились"):
+            extract(batch_size=3, resume_source={**source, "csv": "different-rows"})
+
+        with patch.object(model, "forward", side_effect=lambda batch: batch) as forward:
+            self.assertEqual(extract(batch_size=3), (7, 2))
+        self.assertEqual([c.args[0][:, 0].tolist() for c in forward.call_args_list], [[4, 6, 8], [10, 12]])
+        np.testing.assert_array_equal(np.load(out, allow_pickle=False), vectors.numpy())
+        self.assertFalse((self.tmpdir / "vectors.npy.part").exists())
+
+        get_model = Mock(side_effect=AssertionError("Готовый файл не требует модели"))
+        self.assertEqual(extract(batch_size=3, get_model=get_model), (7, 2))
+        get_model.assert_not_called()
 
     def test_load_model_without_checkpoint(self):
         model = load_model(checkpoint_path=None, descriptor_dim=128, device="cpu", pretrained=False)
